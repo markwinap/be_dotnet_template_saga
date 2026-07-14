@@ -1,0 +1,38 @@
+trigger:
+- main
+
+pool:
+  vmImage: ubuntu-latest
+
+variables:
+  buildConfiguration: Release
+
+stages:
+- stage: BuildTest
+  jobs:
+  - job: Build
+    steps:
+    - task: UseDotNet@2
+      inputs:
+        packageType: sdk
+        version: 10.x
+    - script: dotnet restore OrderService.slnx
+      displayName: Restore
+    - script: dotnet build OrderService.slnx --configuration $(buildConfiguration) --no-restore
+      displayName: Build
+    - script: dotnet test OrderService.slnx --configuration $(buildConfiguration) --no-build --collect "XPlat Code Coverage"
+      displayName: Test
+
+- stage: Containerize
+  dependsOn: BuildTest
+  jobs:
+  - job: Docker
+    steps:
+    - task: Docker@2
+      inputs:
+        command: buildAndPush
+        repository: orderservice-api
+        dockerfile: OrderService.Api/Dockerfile
+        containerRegistry: $(dockerRegistryServiceConnection)
+        tags: |
+          $(Build.BuildId)

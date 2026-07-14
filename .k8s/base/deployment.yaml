@@ -1,0 +1,43 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: order-service-api
+  namespace: order-service
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: order-service-api
+  template:
+    metadata:
+      labels:
+        app: order-service-api
+    spec:
+      containers:
+      - name: api
+        image: orderservice-api:latest
+        ports:
+        - containerPort: 8080
+        env:
+        - name: ASPNETCORE_URLS
+          value: http://+:8080
+        - name: ConnectionStrings__DefaultConnection
+          valueFrom:
+            secretKeyRef:
+              name: order-service-secrets
+              key: sql-connection
+        - name: ConnectionStrings__Redis
+          value: redis:6379
+        - name: ConnectionStrings__ServiceBus
+          valueFrom:
+            secretKeyRef:
+              name: order-service-secrets
+              key: servicebus-connection
+        livenessProbe:
+          httpGet:
+            path: /health/live
+            port: 8080
+        readinessProbe:
+          httpGet:
+            path: /health/ready
+            port: 8080

@@ -1,0 +1,78 @@
+services:
+  orderservice-api:
+    build:
+      context: .
+      dockerfile: OrderService.Api/Dockerfile
+    ports:
+      - "8080:8080"
+    environment:
+      ASPNETCORE_ENVIRONMENT: Development
+      ConnectionStrings__DefaultConnection: Server=sqlserver,1433;Database=OrderService;User Id=sa;Password=YourStrong@Passw0rd;TrustServerCertificate=True;
+      ConnectionStrings__Redis: redis:6379
+      ConnectionStrings__ServiceBus: Endpoint=sb://servicebus-emulator;SharedAccessKeyName=RootManageSharedAccessKey;SharedAccessKey=SAS_KEY_VALUE;UseDevelopmentEmulator=true;
+    depends_on:
+      sqlserver:
+        condition: service_started
+      sqlserver-init:
+        condition: service_completed_successfully
+      servicebus-emulator:
+        condition: service_started
+      redis:
+        condition: service_started
+
+  sqlserver:
+    image: mcr.microsoft.com/mssql/server:2022-latest
+    environment:
+      SA_PASSWORD: "YourStrong@Passw0rd"
+      ACCEPT_EULA: "Y"
+    ports:
+      - "1433:1433"
+
+  sqlserver-init:
+    image: mcr.microsoft.com/mssql-tools
+    environment:
+      SA_PASSWORD: "YourStrong@Passw0rd"
+    volumes:
+      - ./docker/sql/init-orderdb.sql:/scripts/init-orderdb.sql:ro
+    depends_on:
+      - sqlserver
+    entrypoint:
+      - /bin/bash
+      - -c
+      - |
+        set -e
+        SQLCMD=/opt/mssql-tools18/bin/sqlcmd
+        if [ ! -x "$${SQLCMD}" ]; then
+          SQLCMD=/opt/mssql-tools/bin/sqlcmd
+        fi
+        if [ ! -x "$${SQLCMD}" ]; then
+          echo "sqlcmd not found in container image"
+          exit 1
+        fi
+        for i in $(seq 1 60); do
+          "$${SQLCMD}" -S sqlserver,1433 -U sa -P "$${SA_PASSWORD}" -C -Q "SELECT 1" && break
+          echo "Waiting for SQL Server to accept connections..."
+          sleep 2
+        done
+        "$${SQLCMD}" -S sqlserver,1433 -U sa -P "$${SA_PASSWORD}" -C -i /scripts/init-orderdb.sql
+
+  redis:
+    image: redis:7
+    ports:
+      - "6379:6379"
+
+  servicebus-emulator:
+    image: mcr.microsoft.com/azure-messaging/servicebus-emulator:latest
+    environment:
+      SQL_SERVER: sqlserver
+      MSSQL_SA_PASSWORD: "YourStrong@Passw0rd"
+      ACCEPT_EULA: "Y"
+      EMULATOR_HTTP_PORT: "5300"
+    volumes:
+      - ./docker/servicebus/config.json:/ServiceBus_Emulator/ConfigFiles/Config.json:ro
+    depends_on:
+      sqlserver:
+        condition: service_started
+    ports:
+      - "5672:5672"
+      - "5300:5300"

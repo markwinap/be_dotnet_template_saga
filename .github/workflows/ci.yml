@@ -1,0 +1,25 @@
+name: ci
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  build-test:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+    - name: Setup .NET 10
+      uses: actions/setup-dotnet@v4
+      with:
+        dotnet-version: 10.0.x
+    # Keep CI fast and deterministic: compile and test the solution.
+    # Swagger example and compose checks are validated in local/dev workflows.
+    - name: Restore
+      run: dotnet restore OrderService.slnx
+    - name: Build
+      run: dotnet build OrderService.slnx -c Release --no-restore
+    - name: Test
+      run: dotnet test OrderService.slnx -c Release --no-build

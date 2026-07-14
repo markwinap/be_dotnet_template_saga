@@ -1,0 +1,37 @@
+# Build outputs
+[Bb]in/
+[Oo]bj/
+artifacts/
+publish/
+TestResults/
+
+# IDE and user-specific files
+.vs/
+.idea/
+*.suo
+*.user
+*.userosscache
+*.rsuser
+*.sln.docstates
+*.DotSettings.user
+_ReSharper*/
+
+# Logs and diagnostics
+*.log
+logs/
+coverage/
+coverage-results/
+*.coverage
+*.coveragexml
+*.trx
+
+# Local environment overrides
+.env
+.env.*
+appsettings.Local.json
+appsettings.*.local.json
+appsettings.*.override.json
+appsettings.*.secrets.json
+secrets.json
+launchSettings.local.json
+Properties/launchSettings.local.json

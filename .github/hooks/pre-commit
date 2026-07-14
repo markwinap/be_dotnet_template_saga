@@ -1,0 +1,8 @@
+#!/bin/sh
+# Pre-commit hook for the .NET backend template.
+# Build and test the solution before committing.
+
+set -e
+
+dotnet build OrderService.slnx -c Release
+dotnet test OrderService.slnx -c Release --no-build
