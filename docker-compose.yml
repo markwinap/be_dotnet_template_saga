@@ -29,11 +29,11 @@ services:
       - "1433:1433"
 
   sqlserver-init:
-    image: mcr.microsoft.com/mssql-tools
+    build:
+      context: ./docker/sql
+      dockerfile: Dockerfile
     environment:
       SA_PASSWORD: "YourStrong@Passw0rd"
-    volumes:
-      - ./docker/sql/init-orderdb.sql:/scripts/init-orderdb.sql:ro
     depends_on:
       - sqlserver
     entrypoint:
@@ -62,14 +62,14 @@ services:
       - "6379:6379"
 
   servicebus-emulator:
-    image: mcr.microsoft.com/azure-messaging/servicebus-emulator:latest
+    build:
+      context: ./docker/servicebus
+      dockerfile: Dockerfile
     environment:
       SQL_SERVER: sqlserver
       MSSQL_SA_PASSWORD: "YourStrong@Passw0rd"
       ACCEPT_EULA: "Y"
       EMULATOR_HTTP_PORT: "5300"
-    volumes:
-      - ./docker/servicebus/config.json:/ServiceBus_Emulator/ConfigFiles/Config.json:ro
     depends_on:
       sqlserver:
         condition: service_started
