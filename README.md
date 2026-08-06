@@ -151,6 +151,14 @@ dotnet run --project OrderService.Api
 - Prometheus scrape endpoint: `/metrics`
 - Health endpoints: `/health/live`, `/health/ready`, `/health`
 
+6. Tear down local infrastructure:
+
+```bash
+docker-compose down -v
+```
+
+This stops and removes the SQL Server, Redis, and Service Bus Emulator containers and deletes their associated volumes to free local resources.
+
 ## EF Core Migrations
 
 The API uses `EnsureCreatedAsync` on startup to bootstrap the local SQL Server database automatically. For production or long-lived environments, create and run migrations with the `dotnet-ef` tool:
