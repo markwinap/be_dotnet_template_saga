@@ -19,17 +19,17 @@ public class ListOrdersQueryHandlerTests
             CreateDraftOrder("customer-2", "SKU-2", 1, 15m)
         };
 
-        repository.Setup(x => x.ListAsync(It.IsAny<CancellationToken>()))
+        repository.Setup(x => x.ListAsync("customer-1", It.IsAny<CancellationToken>()))
             .ReturnsAsync(orders);
 
         var handler = new ListOrdersQueryHandler(repository.Object);
 
-        var result = await handler.Handle(new ListOrdersQuery(), CancellationToken.None);
+        var result = await handler.Handle(new ListOrdersQuery("customer-1"), CancellationToken.None);
 
         result.Should().HaveCount(2);
         result.Select(x => x.CustomerId).Should().Contain(["customer-1", "customer-2"]);
         result.Sum(x => x.Total).Should().Be(65m);
-        repository.Verify(x => x.ListAsync(It.IsAny<CancellationToken>()), Times.Once);
+        repository.Verify(x => x.ListAsync("customer-1", It.IsAny<CancellationToken>()), Times.Once);
     }
 
     private static Order CreateDraftOrder(string customerId, string sku, int quantity, decimal unitPrice)

@@ -35,3 +35,6 @@ appsettings.*.secrets.json
 secrets.json
 launchSettings.local.json
 Properties/launchSettings.local.json
+
+# folder Interviews
+Interviews/

@@ -18,6 +18,7 @@ public sealed class Order
     public Address ShippingAddress { get; private set; } = new("", "", "", "", "");
     public OrderStatus Status { get; private set; } = OrderStatus.Draft;
     public DateTime CreatedAtUtc { get; private set; }
+    public byte[] RowVersion { get; private set; } = [];
     public IReadOnlyCollection<OrderItem> Items => _items.AsReadOnly();
     public IReadOnlyCollection<IDomainEvent> DomainEvents => _domainEvents.AsReadOnly();
 

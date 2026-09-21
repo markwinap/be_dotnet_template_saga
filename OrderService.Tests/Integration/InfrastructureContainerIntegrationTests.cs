@@ -28,7 +28,7 @@ public sealed class InfrastructureContainerIntegrationTests(IntegrationTestEnvir
             .Options;
 
         await using var dbContext = new OrderDbContext(options);
-        await dbContext.Database.EnsureCreatedAsync();
+        await dbContext.Database.MigrateAsync();
 
         var order = Order.Create("integration-customer", new Address("1 Test Way", "Seattle", "WA", "98052", "US"));
         order.AddItem("SKU-INTEGRATION", 2, new Money(19.99m, "USD"));
@@ -83,7 +83,7 @@ public sealed class InfrastructureContainerIntegrationTests(IntegrationTestEnvir
         var publisher = new AzureServiceBusPublisher(client, NullLogger<AzureServiceBusPublisher>.Instance);
 
         var marker = Guid.NewGuid().ToString("N");
-        await publisher.PublishAsync("integration-topic", new { marker, createdAt = DateTime.UtcNow });
+        await publisher.PublishAsync("integration-topic", marker, new { marker, createdAt = DateTime.UtcNow });
 
         await using var receiver = client.CreateReceiver("integration-topic", "integration-subscription");
         var message = await receiver.ReceiveMessageAsync(TimeSpan.FromSeconds(20));

@@ -20,4 +20,9 @@ public sealed class RedisCacheService(IDistributedCache cache) : ICacheService
             AbsoluteExpirationRelativeToNow = expiration
         }, cancellationToken);
     }
+
+    public Task RemoveAsync(string key, CancellationToken cancellationToken = default)
+    {
+        return cache.RemoveAsync(key, cancellationToken);
+    }
 }

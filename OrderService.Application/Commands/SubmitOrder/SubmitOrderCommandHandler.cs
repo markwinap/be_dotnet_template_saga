@@ -8,17 +8,20 @@ namespace OrderService.Application.Commands.SubmitOrder;
 public sealed class SubmitOrderCommandHandler(
     IOrderRepository repository,
     IOrderSagaOrchestrator sagaOrchestrator,
-    IServiceBusPublisher serviceBusPublisher) : IRequestHandler<SubmitOrderCommand>
+    IServiceBusPublisher serviceBusPublisher,
+    ICacheService cacheService) : IRequestHandler<SubmitOrderCommand>
 {
     public async Task Handle(SubmitOrderCommand request, CancellationToken cancellationToken)
     {
-        var order = await repository.GetByIdAsync(request.OrderId, cancellationToken)
+        var order = await repository.GetByIdAsync(request.OrderId, request.CustomerId, cancellationToken)
             ?? throw new NotFoundException($"Order '{request.OrderId}' not found.");
 
         order.Submit();
         await repository.SaveChangesAsync(cancellationToken);
+        await cacheService.RemoveAsync($"customer:{order.CustomerId}:order:{order.Id}", cancellationToken);
+        await cacheService.RemoveAsync($"customer:{order.CustomerId}:orders:list", cancellationToken);
 
-        await serviceBusPublisher.PublishAsync("orders.submitted", new { order.Id, order.OrderNumber }, cancellationToken);
+        await serviceBusPublisher.PublishAsync("orders.submitted", order.Id.ToString("N"), new { order.Id, order.OrderNumber }, cancellationToken);
         await sagaOrchestrator.HandleOrderSubmittedAsync(order.Id, cancellationToken);
     }
 }

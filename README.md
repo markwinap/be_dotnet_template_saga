@@ -63,14 +63,14 @@ The **SAGA orchestration** skeleton uses a retry policy to coordinate long-runni
 - Clean Architecture + DDD
 - CQRS using MediatR
 - Minimal APIs + OpenAPI/Swagger + XML docs
-- JWT Bearer authentication and token validation
-- EF Core (SQL Server)
+- JWT Bearer authentication, startup option validation, subject-scoped authorization, and API rate limiting
+- EF Core (SQL Server) with migrations, rowversion concurrency, and query indexes
 - Redis Cache (cache-aside via MediatR behavior)
 - Azure Service Bus publisher abstraction
 - SAGA orchestration skeleton with retry policy
 - Polly / resilience handlers
 - Serilog logging
-- OpenTelemetry metrics + Prometheus endpoint (Grafana-ready)
+- OpenTelemetry metrics/traces + Prometheus and optional Azure Monitor/Application Insights export
 - Health checks (liveness/readiness/general)
 - Docker + Kubernetes manifests
 - xUnit + Moq + FluentAssertions tests
@@ -136,7 +136,7 @@ dotnet test OrderService.slnx -c Release
 
 3. Apply the database schema (optional for local dev):
 
-The API runs `EnsureCreatedAsync` on startup, so the database is created automatically. For production, use [EF Core Migrations](#ef-core-migrations).
+In Development, the API applies checked-in EF Core migrations on startup. Production deployments must apply a reviewed SQL script or migration bundle as a controlled pipeline step before application rollout.
 
 4. Run API:
 
@@ -161,20 +161,20 @@ This stops and removes the SQL Server, Redis, and Service Bus Emulator container
 
 ## EF Core Migrations
 
-The API uses `EnsureCreatedAsync` on startup to bootstrap the local SQL Server database automatically. For production or long-lived environments, create and run migrations with the `dotnet-ef` tool:
+The repository includes checked-in EF Core migrations, including SQL Server `rowversion` optimistic concurrency and query indexes. Development applies pending migrations at startup. For production or long-lived environments, generate and deploy a reviewed idempotent SQL script or migration bundle as a separate pipeline step:
 
 ```bash
 dotnet tool install --global dotnet-ef --version 10.0.*
-dotnet ef migrations add InitialCreate --project OrderService.Infrastructure --startup-project OrderService.Api
-dotnet ef database update --project OrderService.Infrastructure --startup-project OrderService.Api
+dotnet ef migrations script --idempotent --project OrderService.Infrastructure --startup-project OrderService.Api --output migrations.sql
+dotnet ef migrations bundle --project OrderService.Infrastructure --startup-project OrderService.Api --output efbundle
 ```
 
 The `OrderService.Infrastructure` project contains the `DbContext` and `Microsoft.EntityFrameworkCore.SqlServer` package. The `OrderService.Api` project is the startup project for design-time tooling.
 
 ## API Endpoints
 
-- `POST /api/auth/dev-token` generates a development JWT token.
-- `GET /api/orders` lists orders.
+- `POST /api/auth/dev-token` generates a JWT only when `ASPNETCORE_ENVIRONMENT=Development`.
+- `GET /api/orders` lists only orders owned by the authenticated token subject.
 - `GET /api/orders/{id}` gets a single order.
 - `POST /api/orders` creates an order.
 - `POST /api/orders/{id}/submit` submits an order.
@@ -187,7 +187,7 @@ The `OrderService.Infrastructure` project contains the `DbContext` and `Microsof
 ```bash
 curl -X POST http://localhost:5101/api/auth/dev-token \
   -H "Content-Type: application/json" \
-  -d '{"userId": "dev-user"}'
+  -d '{"subject": "dev-user"}'
 ```
 
 Response:
@@ -205,7 +205,6 @@ curl -X POST http://localhost:5101/api/orders \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer <token>" \
   -d '{
-    "customerId": "CUST-123",
     "shippingLine1": "123 Main St",
     "city": "Austin",
     "state": "TX",
@@ -286,7 +285,7 @@ This template validates JWT tokens in the API using `AddJwtBearer` with strict t
 Authorization: Bearer <token>
 ```
 
-Note: The API also exposes `/api/auth/dev-token` for local dev convenience. For production, use a standards-based IdP (OIDC/OAuth2) and asymmetric keys.
+Note: `/api/auth/dev-token` is mapped only in Development. JWT options are validated at startup, and the known development secret is rejected outside Development. For production, supply secrets through Key Vault/workload identity and use a standards-based IdP (OIDC/OAuth2) with asymmetric keys.
 
 ## Environment Configuration
 
@@ -301,6 +300,7 @@ Note: The API also exposes `/api/auth/dev-token` for local dev convenience. For 
 | `Jwt:Audience` | JWT audience | `OrderServiceClients` | Yes |
 | `Jwt:Secret` | HMAC256 secret, minimum 32 characters | `PLEASE-CHANGE-TO-AT-LEAST-32-CHARACTERS` | Yes |
 | `Jwt:ExpiresMinutes` | Token lifetime in minutes | `60` | Yes |
+| `APPLICATIONINSIGHTS_CONNECTION_STRING` | Enables Azure Monitor/Application Insights OpenTelemetry export when set | None | Production observability |
 
 For local Service Bus Emulator, use:
 `Endpoint=sb://localhost;SharedAccessKeyName=RootManageSharedAccessKey;SharedAccessKey=SAS_KEY_VALUE;UseDevelopmentEmulator=true;`
@@ -331,7 +331,7 @@ docker run -d --name order-service \
   order-service:latest
 ```
 
-The Dockerfile uses a multi-stage build: `mcr.microsoft.com/dotnet/sdk:10.0` to publish, then `mcr.microsoft.com/dotnet/aspnet:10.0` for the runtime image.
+The Dockerfile uses cache-friendly restore/publish stages, copies the runtime as the built-in non-root `$APP_UID`, and runs on `mcr.microsoft.com/dotnet/aspnet:10.0`.
 
 ## Kubernetes
 
@@ -340,6 +340,8 @@ Apply manifests:
 ```bash
 kubectl apply -k .k8s/base/
 ```
+
+The base manifests include rolling updates, startup/liveness/readiness probes, non-root/restricted security contexts, resource requests and limits, an HPA, and a workload-identity-ready service account. Before production, replace the sample image tag with an immutable ACR digest and configure the service account annotation plus Key Vault CSI/secret synchronization for the target Azure tenant.
 
 ## CI/CD
 
@@ -437,7 +439,7 @@ See [CHANGELOG.md](CHANGELOG.md) for release notes. Upcoming roadmap items:
 | Milestone | Target | Description |
 |---|---|---|
 | v1.1 | 2026 Q3 | Add integration tests for the SAGA compensation path and Terraform for Azure provisioning. |
-| v1.2 | 2026 Q4 | Add OpenTelemetry tracing exporters and example Grafana dashboards. |
+| v1.2 | 2026 Q4 | Add example Application Insights and Grafana dashboards plus alert rules. |
 
 ## Best-Practice References Used
 
@@ -449,5 +451,15 @@ See [CHANGELOG.md](CHANGELOG.md) for release notes. Upcoming roadmap items:
   https://learn.microsoft.com/en-us/dotnet/core/resilience/http-resilience?view=net-10.0
 - ASP.NET Core metrics with OpenTelemetry/Prometheus/Grafana:
   https://learn.microsoft.com/en-us/aspnet/core/log-mon/metrics/metrics?view=aspnetcore-10.0
+- Azure Monitor OpenTelemetry configuration:
+  https://learn.microsoft.com/en-us/azure/azure-monitor/app/opentelemetry-configuration
+- EF Core optimistic concurrency:
+  https://learn.microsoft.com/en-us/ef/core/saving/concurrency
+- Azure Service Bus message loss and duplicates:
+  https://learn.microsoft.com/en-us/azure/service-bus-messaging/service-bus-message-loss-and-duplicates
+- Kubernetes Horizontal Pod Autoscaling:
+  https://kubernetes.io/docs/concepts/workloads/autoscaling/horizontal-pod-autoscale/
+- OWASP API Security Top 10:
+  https://owasp.org/API-Security/editions/2023/en/0x11-t10/
 - JWT debugger/token generation:
   https://jwt.io/

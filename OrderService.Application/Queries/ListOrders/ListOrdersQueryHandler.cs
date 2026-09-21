@@ -9,7 +9,7 @@ public sealed class ListOrdersQueryHandler(IOrderRepository repository)
 {
     public async Task<IReadOnlyCollection<OrderDto>> Handle(ListOrdersQuery request, CancellationToken cancellationToken)
     {
-        var orders = await repository.ListAsync(cancellationToken);
+        var orders = await repository.ListAsync(request.CustomerId, cancellationToken);
 
         return orders
             .Select(order => new OrderDto(

@@ -11,17 +11,18 @@ public sealed class OrderRepository(OrderDbContext dbContext) : IOrderRepository
         await dbContext.Orders.AddAsync(order, cancellationToken);
     }
 
-    public Task<Order?> GetByIdAsync(Guid id, CancellationToken cancellationToken = default)
+    public Task<Order?> GetByIdAsync(Guid id, string customerId, CancellationToken cancellationToken = default)
     {
         return dbContext.Orders
             .Include(x => x.Items)
-            .FirstOrDefaultAsync(x => x.Id == id, cancellationToken);
+            .FirstOrDefaultAsync(x => x.Id == id && x.CustomerId == customerId, cancellationToken);
     }
 
-    public async Task<IReadOnlyCollection<Order>> ListAsync(CancellationToken cancellationToken = default)
+    public async Task<IReadOnlyCollection<Order>> ListAsync(string customerId, CancellationToken cancellationToken = default)
     {
         return await dbContext.Orders
             .AsNoTracking()
+            .Where(x => x.CustomerId == customerId)
             .Include(x => x.Items)
             .OrderByDescending(x => x.CreatedAtUtc)
             .ToListAsync(cancellationToken);

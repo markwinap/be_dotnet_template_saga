@@ -15,6 +15,9 @@ public sealed class OrderDbContext(DbContextOptions<OrderDbContext> options) : D
             order.HasKey(o => o.Id);
             order.Property(o => o.OrderNumber).HasMaxLength(64);
             order.Property(o => o.CustomerId).HasMaxLength(64);
+            order.Property(o => o.RowVersion).IsRowVersion();
+            order.HasIndex(o => new { o.CustomerId, o.CreatedAtUtc });
+            order.HasIndex(o => o.OrderNumber).IsUnique();
             order.OwnsOne(o => o.ShippingAddress, address =>
             {
                 address.Property(a => a.Line1).HasMaxLength(200);

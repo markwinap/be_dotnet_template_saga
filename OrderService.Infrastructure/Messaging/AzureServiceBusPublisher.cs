@@ -7,17 +7,22 @@ namespace OrderService.Infrastructure.Messaging;
 
 public sealed class AzureServiceBusPublisher(ServiceBusClient client, ILogger<AzureServiceBusPublisher> logger) : IServiceBusPublisher
 {
-    public async Task PublishAsync<T>(string topicName, T payload, CancellationToken cancellationToken = default)
+    public async Task PublishAsync<T>(string topicName, string messageId, T payload, CancellationToken cancellationToken = default)
     {
         try
         {
             await using var sender = client.CreateSender(topicName);
-            var message = new ServiceBusMessage(JsonSerializer.Serialize(payload));
+            var message = new ServiceBusMessage(JsonSerializer.Serialize(payload))
+            {
+                MessageId = messageId,
+                ContentType = "application/json"
+            };
             await sender.SendMessageAsync(message, cancellationToken);
         }
         catch (Exception ex)
         {
-            logger.LogWarning(ex, "Service Bus publish failed for topic {TopicName}.", topicName);
+            logger.LogError(ex, "Service Bus publish failed for topic {TopicName} and message {MessageId}.", topicName, messageId);
+            throw;
         }
     }
 }

@@ -33,7 +33,6 @@ public sealed class EndpointExamplesOperationFilter : IOperationFilter
         {
             AddJsonRequestExample(operation, new OpenApiObject
             {
-                ["customerId"] = new OpenApiString("customer-123"),
                 ["shippingLine1"] = new OpenApiString("1 Main St"),
                 ["city"] = new OpenApiString("Seattle"),
                 ["state"] = new OpenApiString("WA"),

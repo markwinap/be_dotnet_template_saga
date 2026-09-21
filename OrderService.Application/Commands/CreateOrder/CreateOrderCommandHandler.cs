@@ -1,4 +1,5 @@
 using MediatR;
+using OrderService.Application.Common.Interfaces;
 using OrderService.Application.DTOs;
 using OrderService.Domain.Entities;
 using OrderService.Domain.Interfaces;
@@ -6,7 +7,7 @@ using OrderService.Domain.ValueObjects;
 
 namespace OrderService.Application.Commands.CreateOrder;
 
-public sealed class CreateOrderCommandHandler(IOrderRepository repository) : IRequestHandler<CreateOrderCommand, OrderDto>
+public sealed class CreateOrderCommandHandler(IOrderRepository repository, ICacheService cacheService) : IRequestHandler<CreateOrderCommand, OrderDto>
 {
     public async Task<OrderDto> Handle(CreateOrderCommand request, CancellationToken cancellationToken)
     {
@@ -21,6 +22,7 @@ public sealed class CreateOrderCommandHandler(IOrderRepository repository) : IRe
 
         await repository.AddAsync(order, cancellationToken);
         await repository.SaveChangesAsync(cancellationToken);
+        await cacheService.RemoveAsync($"customer:{order.CustomerId}:orders:list", cancellationToken);
 
         return new OrderDto(
             order.Id,

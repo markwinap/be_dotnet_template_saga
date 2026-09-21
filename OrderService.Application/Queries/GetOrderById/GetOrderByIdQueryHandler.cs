@@ -8,7 +8,7 @@ public sealed class GetOrderByIdQueryHandler(IOrderRepository repository) : IReq
 {
     public async Task<OrderDto?> Handle(GetOrderByIdQuery request, CancellationToken cancellationToken)
     {
-        var order = await repository.GetByIdAsync(request.OrderId, cancellationToken);
+        var order = await repository.GetByIdAsync(request.OrderId, request.CustomerId, cancellationToken);
         if (order is null)
         {
             return null;

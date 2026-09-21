@@ -28,15 +28,13 @@ public sealed class IntegrationTestEnvironment : IAsyncLifetime
           .WithName($"orderservice-it-{Guid.NewGuid():N}")
           .Build();
 
-        _sqlContainer = new MsSqlBuilder()
-          .WithImage("mcr.microsoft.com/mssql/server:2022-latest")
+        _sqlContainer = new MsSqlBuilder("mcr.microsoft.com/mssql/server:2022-latest")
           .WithPassword(SqlPassword)
           .WithNetwork(_network)
           .WithNetworkAliases("mssql")
           .Build();
 
-        _redisContainer = new RedisBuilder()
-          .WithImage("redis:7")
+        _redisContainer = new RedisBuilder("redis:7")
           .WithNetwork(_network)
           .Build();
       }
@@ -72,8 +70,7 @@ public sealed class IntegrationTestEnvironment : IAsyncLifetime
 
         await File.WriteAllTextAsync(_serviceBusConfigFilePath, GetServiceBusConfigJson());
 
-        _serviceBusContainer = new ContainerBuilder()
-            .WithImage("mcr.microsoft.com/azure-messaging/servicebus-emulator:latest")
+        _serviceBusContainer = new ContainerBuilder("mcr.microsoft.com/azure-messaging/servicebus-emulator:latest")
             .WithNetwork(_network)
             .WithPortBinding(5672, true)
             .WithPortBinding(5300, true)
