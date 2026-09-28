@@ -22,6 +22,7 @@ using OrderService.Domain.Services;
 using OrderService.Infrastructure;
 using OrderService.Infrastructure.Data;
 using Serilog;
+using JasperFx.CodeGeneration;
 using JasperFx.Core;
 using Wolverine;
 using Wolverine.AzureServiceBus;
@@ -82,6 +83,7 @@ builder.Services.AddAuthorizationBuilder()
     .SetFallbackPolicy(new AuthorizationPolicyBuilder().RequireAuthenticatedUser().Build());
 
 builder.Services.AddEndpointsApiExplorer();
+builder.Services.AddWolverineHttp();
 builder.Services.AddSwaggerGen(options =>
 {
     options.IncludeXmlComments(Path.Combine(AppContext.BaseDirectory, "OrderService.Api.xml"), includeControllerXmlComments: true);
@@ -158,6 +160,7 @@ var serviceBusConnection = builder.Configuration.GetConnectionString("ServiceBus
 builder.Host.UseWolverine(opts =>
 {
     opts.Discovery.IncludeAssembly(typeof(OrderService.Application.DependencyInjection).Assembly);
+    opts.CodeGeneration.TypeLoadMode = TypeLoadMode.Dynamic;
 
     opts.UseFluentValidation();
 
@@ -165,10 +168,14 @@ builder.Host.UseWolverine(opts =>
     opts.UseEntityFrameworkCoreTransactions();
     opts.Policies.AutoApplyTransactions();
     opts.Policies.UseDurableLocalQueues();
+    opts.Durability.Mode = DurabilityMode.Solo;
 
-    opts.UseAzureServiceBus(serviceBusConnection)
-        .AutoProvision();
-    opts.PublishMessage<OrderSubmittedEvent>().ToAzureServiceBusTopic("orders.submitted");
+    if (builder.Configuration.GetValue("Wolverine:UseAzureServiceBus", true))
+    {
+        opts.UseAzureServiceBus(serviceBusConnection)
+            .AutoProvision();
+        opts.PublishMessage<OrderSubmittedEvent>().ToAzureServiceBusTopic("orders.submitted");
+    }
 
     opts.Policies.AddMiddleware(typeof(AuditMiddleware), chain => chain.MessageType.IsAssignableTo(typeof(IAuditableCommand)));
 

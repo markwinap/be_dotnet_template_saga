@@ -114,10 +114,22 @@ API routes are implemented with `[WolverineGet]`, `[WolverinePost]`, and `[Wolve
 
 ## Testing
 
-- Unit tests invoke handler static methods directly with mocks.
-- The custom audit middleware is tested with a fake `Envelope`.
-- Integration tests verify EF Core persistence, Redis caching, and audit tables. Container-aware tests skip when Docker is unavailable.
-- Wolverine saga and durable messaging tests can be added by spinning up an `IHost` with the production `UseWolverine` configuration and an in-memory or containerized SQL Server store.
+- **Unit tests** invoke handler static methods directly with mocks.
+- **Saga state-transition tests** exercise the saga logic without Wolverine infrastructure.
+- **Custom middleware tests** verify audit logging with a fake `Envelope`.
+- **Integration tests** use the real Wolverine runtime via an Alba host:
+  - HTTP endpoint tests for `POST /api/orders` and `POST /api/orders/{id}/submit`, including JWT auth and database persistence.
+  - Wolverine handler pipeline tests that dispatch commands through `IMessageBus` and assert database side effects.
+  - Saga start test that verifies `OrderSubmitted` creates a saga state row.
+  - Existing container tests for EF Core, Redis, and audit persistence.
+
+Tests disable the Azure Service Bus transport with the `Wolverine:UseAzureServiceBus=false` configuration switch so they run without external messaging infrastructure.
+
+### Follow-up test opportunities
+
+- A full end-to-end integration test that lets Wolverine's durable local queues process all cascading saga messages and verifies the saga reaches `Completed`.
+- Idempotency test that sends the same `OrderSubmitted` message twice and confirms no duplicate saga state.
+- Failure-path tests for validation errors and business rule violations through the HTTP endpoint layer.
 
 ## References
 

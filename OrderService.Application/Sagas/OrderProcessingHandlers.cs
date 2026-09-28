@@ -5,21 +5,18 @@ namespace OrderService.Application.Sagas;
 
 public static class OrderProcessingHandlers
 {
-    public static InventoryReserved Handle(ReserveInventory message, ILogger<ReserveInventory> logger)
+    public static InventoryReserved Handle(ReserveInventory message)
     {
-        logger.LogInformation("Reserving inventory for order {OrderId}", message.OrderId);
         return new InventoryReserved(message.OrderId);
     }
 
-    public static PaymentProcessed Handle(ProcessPayment message, ILogger<ProcessPayment> logger)
+    public static PaymentProcessed Handle(ProcessPayment message)
     {
-        logger.LogInformation("Processing payment for order {OrderId}", message.OrderId);
         return new PaymentProcessed(message.OrderId);
     }
 
-    public static ShipmentCreated Handle(CreateShipment message, ILogger<CreateShipment> logger)
+    public static ShipmentCreated Handle(CreateShipment message)
     {
-        logger.LogInformation("Creating shipment for order {OrderId}", message.OrderId);
         return new ShipmentCreated(message.OrderId);
     }
 }

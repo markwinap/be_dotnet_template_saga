@@ -62,10 +62,13 @@ Grouped action backlog for the migration from MediatR/Clean Architecture-by-laye
 ## Follow-up / next steps
 
 ### Tests
-- [ ] Add Wolverine saga state-transition unit tests.
-- [ ] Add integration test that publishes/subscribes through Wolverine's durable outbox with containerized SQL Server.
-- [ ] Add idempotency test for duplicate `SubmitOrderCommand` messages.
-- [ ] Evaluate [Alba](https://jasperfx.github.io/alba) for full Wolverine HTTP endpoint integration tests.
+- [x] Add Wolverine saga state-transition unit tests.
+- [x] Add Alba-based Wolverine HTTP endpoint integration tests.
+- [x] Add Wolverine message-bus integration tests that exercise the real handler pipeline.
+- [ ] Add a full end-to-end integration test that lets Wolverine's durable local queues process all cascading saga messages and verifies the saga reaches `Completed`.
+- [ ] Add idempotency test for duplicate `OrderSubmitted` messages.
+- [ ] Add failure-path integration tests for validation errors and business-rule violations through the HTTP endpoint layer.
+- [ ] Add integration test for Wolverine durable outbox persistence in SQL Server.
 
 ### Operations
 - [ ] Verify local end-to-end run with Docker Compose and Azure Service Bus Emulator:

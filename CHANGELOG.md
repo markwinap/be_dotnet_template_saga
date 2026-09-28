@@ -42,6 +42,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Wolverine error-handling policy with exponential backoff and full jitter, falling back to a dead-letter queue.
 - `WOLVERINE.md` documenting Wolverine practices, feature mapping, and references.
 - `BACKLOG.md` with completed and follow-up actions grouped by area.
+- Alba-based HTTP endpoint integration tests covering JWT auth, create order, and submit order flows.
+- Wolverine message-bus integration tests that dispatch commands through the real handler pipeline and verify database side effects.
+- Saga state-transition unit tests and a saga-start integration test.
 
 ## [1.0.0] - 2026-07-10
 
