@@ -20,6 +20,7 @@ Production-ready backend scaffolding with .NET 10, Clean Architecture, DDD, CQRS
 - [EF Core Migrations](#ef-core-migrations)
 - [API Endpoints](#api-endpoints)
 - [API Examples](#api-examples)
+- [Business Rules, Workflows, and Audit](#business-rules-workflows-and-audit)
 - [JWT: Generate and Validate](#jwt-generate-and-validate)
 - [Environment Configuration](#environment-configuration)
 - [Docker](#docker)
@@ -179,6 +180,8 @@ The `OrderService.Infrastructure` project contains the `DbContext` and `Microsof
 - `POST /api/orders` creates an order.
 - `POST /api/orders/{id}/submit` submits an order.
 - `DELETE /api/orders/{id}` deletes an order.
+- `GET /api/orders/{id}/workflow-state` gets the durable workflow execution state for an order.
+- `GET /api/orders/{id}/audit` gets the audit/state trace history for an order.
 
 ## API Examples
 
@@ -243,6 +246,37 @@ curl -X GET http://localhost:5101/api/orders \
 
 Swagger/OpenAPI now includes request/response examples for the main order and auth endpoints to speed up local testing in Swagger UI.
 
+## Business Rules, Workflows, and Audit
+
+### Order-domain business rules
+
+The following rules are enforced server-side when an order is submitted. They are configurable through the `OrderService` section of `appsettings.json`.
+
+| Rule | Description | Default |
+|---|---|---|
+| Submission rate limit | A customer can submit at most one order per minute. | 1 / minute |
+| Business-hours window | Orders can only be submitted between 08:00 and 20:00 in the configured time zone. | 08:00-20:00 UTC |
+| Minimum order total | An order total must be at least the configured minimum to be submitted. | USD 10 |
+| Maximum item quantity | A single line item cannot exceed the configured quantity. | 100 units |
+| Daily submission cap | A customer can submit at most the configured number of orders per UTC day. | 100 / day |
+| Draft expiration | Draft orders that are not submitted within the configured window expire and cannot be submitted. | 24 hours |
+
+### Order submission workflow (SAGA)
+
+Order submission is modeled as a durable workflow with an **outbox**, **idempotency keys**, and **activity-based SAGA** steps:
+
+1. The command handler validates the business rules and transitions the order from `Draft` to `Submitted`.
+2. The same EF Core transaction writes an `OrderSubmittedEvent` to the `OutboxMessages` table.
+3. A background `OutboxDispatcher` publishes the event to Azure Service Bus.
+4. The `OrderProcessingSaga` runs idempotent activities: `ReserveInventory`, `ProcessPayment`, and `CreateShipment`.
+5. Workflow execution state is stored separately from order business state in `OrderWorkflowExecutions`.
+
+This design follows the SRD durable-workflow guidance: workflow runtime owns execution history while the domain owns business state, activities are idempotent, and failures are classified and recorded for forward recovery.
+
+### Audit and state traceability
+
+Every mutating command is recorded in the immutable `audit.AuditLog` table. Order-state transitions are stored in `audit.OrderStateTrace`. Both tables are append-only and indexed for querying by entity, actor, and correlation ID. Audit rows include a `RowHash` for integrity.
+
 ## JWT: Generate and Validate
 
 This template validates JWT tokens in the API using `AddJwtBearer` with strict token checks:
@@ -300,6 +334,14 @@ Note: `/api/auth/dev-token` is mapped only in Development. JWT options are valid
 | `Jwt:Audience` | JWT audience | `OrderServiceClients` | Yes |
 | `Jwt:Secret` | HMAC256 secret, minimum 32 characters | `PLEASE-CHANGE-TO-AT-LEAST-32-CHARACTERS` | Yes |
 | `Jwt:ExpiresMinutes` | Token lifetime in minutes | `60` | Yes |
+|| `OrderService:MinimumOrderTotal` | Minimum order total required to submit | `10` | Yes |
+|| `OrderService:MaximumItemQuantity` | Maximum quantity allowed per line item | `100` | Yes |
+|| `OrderService:MaxSubmissionsPerMinute` | Maximum submitted orders per customer per minute | `1` | Yes |
+|| `OrderService:MaxSubmissionsPerDay` | Maximum submitted orders per customer per UTC day | `100` | Yes |
+|| `OrderService:DraftExpirationHours` | Hours before a draft order expires | `24` | Yes |
+|| `OrderService:BusinessHoursOpenAt` | Opening time for order submissions | `08:00:00` | Yes |
+|| `OrderService:BusinessHoursCloseAt` | Closing time for order submissions | `20:00:00` | Yes |
+|| `OrderService:TimeZoneId` | Time zone used for business-hours rule | `UTC` | Yes |
 | `APPLICATIONINSIGHTS_CONNECTION_STRING` | Enables Azure Monitor/Application Insights OpenTelemetry export when set | None | Production observability |
 
 For local Service Bus Emulator, use:

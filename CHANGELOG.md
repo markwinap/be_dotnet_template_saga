@@ -24,6 +24,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Six configurable order-domain business rules: submission rate limit, business-hours window, minimum order total, maximum item quantity, daily submission cap, and draft expiration.
+- Durable order-submission workflow with transactional outbox, idempotency by message ID, and activity-based SAGA steps (ReserveInventory, ProcessPayment, CreateShipment).
+- Separate workflow execution state in `OrderWorkflowExecutions` to keep business and technical concerns orthogonal.
+- Immutable audit tables `audit.AuditLog` and `audit.OrderStateTrace` with integrity hash and append-only semantics.
+- `AuditBehavior` MediatR pipeline to record every mutating command, plus `HttpAuditContext` for actor/correlation metadata.
+- New endpoints: `GET /api/orders/{id}/workflow-state` and `GET /api/orders/{id}/audit`.
+- EF Core migration `AddOrderRulesWorkflowAudit` adding outbox, audit, and workflow tables.
+- Unit and integration tests covering the new rules, policy, audit behavior, outbox, and audit persistence.
+
 ### Planned
 
 - Integration tests for SAGA compensation paths.

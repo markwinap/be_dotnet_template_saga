@@ -3,6 +3,8 @@ using Moq;
 using OrderService.Application.Commands.CreateOrder;
 using OrderService.Application.Common.Interfaces;
 using OrderService.Domain.Interfaces;
+using OrderService.Domain.Services;
+using OrderService.Domain.ValueObjects;
 
 namespace OrderService.Tests;
 
@@ -13,7 +15,10 @@ public class CreateOrderCommandHandlerTests
     {
         var repository = new Mock<IOrderRepository>();
         var cacheService = new Mock<ICacheService>();
-        var handler = new CreateOrderCommandHandler(repository.Object, cacheService.Object);
+        var auditRepository = new Mock<IAuditRepository>();
+        var auditContext = CreateAuditContext();
+        var options = CreateOptions();
+        var handler = new CreateOrderCommandHandler(repository.Object, cacheService.Object, auditRepository.Object, auditContext, options);
 
         var command = new CreateOrderCommand(
             "customer-1",
@@ -32,5 +37,16 @@ public class CreateOrderCommandHandlerTests
         repository.Verify(x => x.AddAsync(It.IsAny<OrderService.Domain.Entities.Order>(), It.IsAny<CancellationToken>()), Times.Once);
         repository.Verify(x => x.SaveChangesAsync(It.IsAny<CancellationToken>()), Times.Once);
         cacheService.Verify(x => x.RemoveAsync("customer:customer-1:orders:list", It.IsAny<CancellationToken>()), Times.Once);
+        auditRepository.Verify(x => x.AddAsync(It.IsAny<OrderService.Domain.Entities.Audit.OrderStateTrace>(), It.IsAny<CancellationToken>()), Times.Once);
+        auditRepository.Verify(x => x.SaveChangesAsync(It.IsAny<CancellationToken>()), Times.AtLeastOnce);
     }
+
+    private static IAuditContext CreateAuditContext() =>
+        Mock.Of<IAuditContext>(ctx =>
+            ctx.ActorId == "customer-1" &&
+            ctx.CorrelationId == "correlation-1" &&
+            ctx.SourceSystem == "OrderService.Api");
+
+    private static OrderSubmissionPolicyOptions CreateOptions() =>
+        new(10m, 100, 1, 100, TimeSpan.FromHours(24), new BusinessHours(new TimeOnly(8, 0), new TimeOnly(20, 0)), TimeZoneInfo.Utc);
 }

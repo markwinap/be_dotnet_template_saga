@@ -36,7 +36,8 @@ public class ListOrdersQueryHandlerTests
     {
         var order = Order.Create(
             customerId,
-            new Address("1 Main St", "Seattle", "WA", "98052", "US"));
+            new Address("1 Main St", "Seattle", "WA", "98052", "US"),
+            TimeSpan.FromHours(24));
         order.AddItem(sku, quantity, new Money(unitPrice, "USD"));
         return order;
     }

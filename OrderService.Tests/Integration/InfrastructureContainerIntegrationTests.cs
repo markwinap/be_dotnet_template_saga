@@ -5,6 +5,8 @@ using Microsoft.Extensions.Caching.StackExchangeRedis;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using OrderService.Domain.Entities;
+using OrderService.Domain.Entities.Audit;
+using OrderService.Domain.Events;
 using OrderService.Domain.ValueObjects;
 using OrderService.Infrastructure.Caching;
 using OrderService.Infrastructure.Data;
@@ -30,7 +32,7 @@ public sealed class InfrastructureContainerIntegrationTests(IntegrationTestEnvir
         await using var dbContext = new OrderDbContext(options);
         await dbContext.Database.MigrateAsync();
 
-        var order = Order.Create("integration-customer", new Address("1 Test Way", "Seattle", "WA", "98052", "US"));
+        var order = Order.Create("integration-customer", new Address("1 Test Way", "Seattle", "WA", "98052", "US"), TimeSpan.FromHours(24));
         order.AddItem("SKU-INTEGRATION", 2, new Money(19.99m, "USD"));
 
         await dbContext.Orders.AddAsync(order);
@@ -92,6 +94,89 @@ public sealed class InfrastructureContainerIntegrationTests(IntegrationTestEnvir
         message!.Body.ToString().Should().Contain(marker);
 
         await receiver.CompleteMessageAsync(message);
+    }
+
+    [Fact]
+    public async Task Outbox_ShouldPersistAndRetrieveUnprocessedMessages()
+    {
+        if (!environment.IsDockerAvailable)
+        {
+            return;
+        }
+
+        var options = new DbContextOptionsBuilder<OrderDbContext>()
+            .UseSqlServer(environment.SqlConnectionString)
+            .Options;
+
+        await using var dbContext = new OrderDbContext(options);
+        await dbContext.Database.MigrateAsync();
+
+        var message = OutboxMessage.Create(
+            typeof(OrderSubmittedEvent).FullName!,
+            "orders.submitted",
+            "{\"orderId\":\"test\"}",
+            Guid.NewGuid().ToString("N"));
+
+        await dbContext.OutboxMessages.AddAsync(message);
+        await dbContext.SaveChangesAsync();
+
+        var unprocessed = await dbContext.OutboxMessages
+            .Where(m => m.ProcessedAtUtc == null)
+            .ToListAsync();
+
+        unprocessed.Should().ContainSingle(m => m.Id == message.Id);
+    }
+
+    [Fact]
+    public async Task Audit_ShouldPersistAuditLogAndOrderStateTrace()
+    {
+        if (!environment.IsDockerAvailable)
+        {
+            return;
+        }
+
+        var options = new DbContextOptionsBuilder<OrderDbContext>()
+            .UseSqlServer(environment.SqlConnectionString)
+            .Options;
+
+        await using var dbContext = new OrderDbContext(options);
+        await dbContext.Database.MigrateAsync();
+
+        var auditLog = AuditLog.Create(
+            "actor-1",
+            "actor@example.com",
+            "SubmitOrder",
+            "Order",
+            Guid.NewGuid().ToString("N"),
+            null,
+            "{\"status\":\"Submitted\"}",
+            null,
+            "OrderService.Api",
+            Guid.NewGuid().ToString("N"),
+            "127.0.0.1",
+            "session-1");
+
+        var orderId = Guid.NewGuid();
+        var trace = OrderStateTrace.Create(
+            orderId,
+            "Draft",
+            "Submitted",
+            "actor-1",
+            null,
+            auditLog.CorrelationId,
+            "{\"total\":100.00}");
+
+        await dbContext.AuditLogs.AddAsync(auditLog);
+        await dbContext.OrderStateTraces.AddAsync(trace);
+        await dbContext.SaveChangesAsync();
+
+        var loadedLog = await dbContext.AuditLogs.SingleAsync(x => x.EventId == auditLog.EventId);
+        var loadedTrace = await dbContext.OrderStateTraces.SingleAsync(x => x.TraceId == trace.TraceId);
+
+        loadedLog.Action.Should().Be("SubmitOrder");
+        loadedLog.RowHash.Should().NotBeNullOrWhiteSpace();
+        loadedTrace.OrderId.Should().Be(orderId);
+        loadedTrace.State.Should().Be("Submitted");
     }
 
     private sealed record CachedModel(string Name, int Value);

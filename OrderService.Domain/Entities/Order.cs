@@ -1,6 +1,7 @@
 using OrderService.Domain.Enums;
 using OrderService.Domain.Events;
 using OrderService.Domain.Exceptions;
+using OrderService.Domain.Services;
 using OrderService.Domain.ValueObjects;
 
 namespace OrderService.Domain.Entities;
@@ -18,20 +19,24 @@ public sealed class Order
     public Address ShippingAddress { get; private set; } = new("", "", "", "", "");
     public OrderStatus Status { get; private set; } = OrderStatus.Draft;
     public DateTime CreatedAtUtc { get; private set; }
+    public DateTime ExpiresAtUtc { get; private set; }
+    public DateTime? SubmittedAtUtc { get; private set; }
     public byte[] RowVersion { get; private set; } = [];
     public IReadOnlyCollection<OrderItem> Items => _items.AsReadOnly();
     public IReadOnlyCollection<IDomainEvent> DomainEvents => _domainEvents.AsReadOnly();
 
-    public static Order Create(string customerId, Address shippingAddress)
+    public static Order Create(string customerId, Address shippingAddress, TimeSpan draftExpiration)
     {
+        var now = DateTime.UtcNow;
         var order = new Order
         {
             Id = Guid.NewGuid(),
-            OrderNumber = $"ORD-{DateTime.UtcNow:yyyyMMddHHmmss}-{Random.Shared.Next(1000, 9999)}",
+            OrderNumber = $"ORD-{now:yyyyMMddHHmmss}-{Random.Shared.Next(1000, 9999)}",
             CustomerId = customerId,
             ShippingAddress = shippingAddress,
             Status = OrderStatus.Draft,
-            CreatedAtUtc = DateTime.UtcNow
+            CreatedAtUtc = now,
+            ExpiresAtUtc = now.Add(draftExpiration)
         };
 
         order.Raise(new OrderCreatedEvent(order.Id, order.OrderNumber));
@@ -53,20 +58,46 @@ public sealed class Order
         _items.Add(OrderItem.Create(Id, productCode, quantity, unitPrice));
     }
 
-    public void Submit()
+    public void Submit(OrderSubmissionPolicyOptions options, DateTime nowUtc)
     {
-        if (!_items.Any())
-        {
-            throw new DomainException("Cannot submit an order without items.");
-        }
-
         if (Status != OrderStatus.Draft)
         {
             throw new DomainException("Only draft orders can be submitted.");
         }
 
+        if (!_items.Any())
+        {
+            throw new DomainException("Cannot submit an order without items.");
+        }
+
+        if (GetTotal() < options.MinimumOrderTotal)
+        {
+            throw new DomainException($"Order total must be at least {options.MinimumOrderTotal:C}.");
+        }
+
+        if (_items.Any(item => item.Quantity > options.MaximumItemQuantity))
+        {
+            throw new DomainException($"No item may exceed a quantity of {options.MaximumItemQuantity}.");
+        }
+
+        if (nowUtc >= ExpiresAtUtc)
+        {
+            throw new DomainException("The draft order has expired and can no longer be submitted.");
+        }
+
         Status = OrderStatus.Submitted;
+        SubmittedAtUtc = nowUtc;
         Raise(new OrderSubmittedEvent(Id));
+    }
+
+    public void Expire(DateTime nowUtc)
+    {
+        if (Status != OrderStatus.Draft || nowUtc < ExpiresAtUtc)
+        {
+            return;
+        }
+
+        Status = OrderStatus.Expired;
     }
 
     public void Cancel()

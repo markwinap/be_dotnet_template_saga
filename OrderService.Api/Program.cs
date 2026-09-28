@@ -13,14 +13,18 @@ using Microsoft.IdentityModel.Tokens;
 using OpenTelemetry.Metrics;
 using OpenTelemetry.Trace;
 using OrderService.Api.Options;
+using OrderService.Api.Services;
 using OrderService.Application;
 using OrderService.Application.Commands.CreateOrder;
 using OrderService.Application.Commands.DeleteOrder;
 using OrderService.Application.Commands.SubmitOrder;
 using OrderService.Application.Common.Exceptions;
+using OrderService.Application.Common.Interfaces;
 using OrderService.Application.DTOs;
 using OrderService.Application.Queries.GetOrderById;
 using OrderService.Application.Queries.ListOrders;
+using OrderService.Domain.Interfaces;
+using OrderService.Domain.Services;
 using OrderService.Infrastructure;
 using OrderService.Infrastructure.Data;
 using OrderService.Api.Swagger;
@@ -46,6 +50,15 @@ var jwtOptions = builder.Configuration.GetSection(JwtOptions.SectionName).Get<Jw
 
 builder.Services.AddApplication();
 builder.Services.AddInfrastructure(builder.Configuration);
+
+builder.Services.AddOptions<OrderServiceOptions>()
+    .Bind(builder.Configuration.GetSection(OrderServiceOptions.SectionName))
+    .ValidateDataAnnotations()
+    .ValidateOnStart();
+builder.Services.AddSingleton(sp => sp.GetRequiredService<Microsoft.Extensions.Options.IOptions<OrderServiceOptions>>().Value.ToDomainOptions());
+
+builder.Services.AddHttpContextAccessor();
+builder.Services.AddScoped<IAuditContext, HttpAuditContext>();
 
 builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
     .AddJwtBearer(options =>
@@ -242,6 +255,27 @@ app.MapDelete("/api/orders/{id:guid}", async (Guid id, ClaimsPrincipal user, ISe
     }
 })
 .WithSummary("Deletes an order.")
+.RequireRateLimiting("api");
+
+app.MapGet("/api/orders/{id:guid}/workflow-state", async (Guid id, IOrderWorkflowExecutionStore executionStore, CancellationToken cancellationToken) =>
+{
+    var execution = await executionStore.GetByOrderIdAsync(id, cancellationToken);
+    return execution is null ? Results.NotFound() : Results.Ok(execution);
+})
+.WithName("GetOrderWorkflowState")
+.Produces<object>(StatusCodes.Status200OK)
+.Produces(StatusCodes.Status404NotFound)
+.WithSummary("Gets the durable workflow execution state for an order.")
+.RequireRateLimiting("api");
+
+app.MapGet("/api/orders/{id:guid}/audit", async (Guid id, IAuditRepository auditRepository, CancellationToken cancellationToken) =>
+{
+    var traces = await auditRepository.ListOrderTracesAsync(id, cancellationToken);
+    return Results.Ok(traces);
+})
+.WithName("GetOrderAuditTrace")
+.Produces<IReadOnlyCollection<object>>(StatusCodes.Status200OK)
+.WithSummary("Gets the audit/state trace history for an order.")
 .RequireRateLimiting("api");
 
 app.Run();

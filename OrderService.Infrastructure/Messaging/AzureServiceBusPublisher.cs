@@ -12,7 +12,10 @@ public sealed class AzureServiceBusPublisher(ServiceBusClient client, ILogger<Az
         try
         {
             await using var sender = client.CreateSender(topicName);
-            var message = new ServiceBusMessage(JsonSerializer.Serialize(payload))
+            var body = payload is string payloadString
+                ? payloadString
+                : JsonSerializer.Serialize(payload);
+            var message = new ServiceBusMessage(body)
             {
                 MessageId = messageId,
                 ContentType = "application/json"

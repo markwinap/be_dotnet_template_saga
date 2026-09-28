@@ -4,5 +4,6 @@ public enum OrderStatus
 {
     Draft = 0,
     Submitted = 1,
-    Cancelled = 2
+    Cancelled = 2,
+    Expired = 3
 }

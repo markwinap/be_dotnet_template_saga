@@ -145,6 +145,42 @@ public sealed class EndpointExamplesOperationFilter : IOperationFilter
                 ["message"] = new OpenApiString("Order not found")
             });
         }
+
+        if (path == "api/orders/{id:guid}/workflow-state" && method == "GET")
+        {
+            AddJsonResponseExample(operation, "200", new OpenApiObject
+            {
+                ["id"] = new OpenApiString("a1b2c3d4-e5f6-7890-abcd-ef1234567890"),
+                ["orderId"] = new OpenApiString("4a18f3d2-a96d-4d4d-97a2-a5657f5f2d36"),
+                ["currentStep"] = new OpenApiString("Completed"),
+                ["status"] = new OpenApiString("Completed"),
+                ["startedAtUtc"] = new OpenApiDateTime(DateTime.Parse("2026-07-09T22:00:00Z")),
+                ["completedAtUtc"] = new OpenApiDateTime(DateTime.Parse("2026-07-09T22:00:05Z")),
+                ["retryCount"] = new OpenApiInteger(0)
+            });
+
+            AddJsonResponseExample(operation, "404", new OpenApiObject
+            {
+                ["message"] = new OpenApiString("Workflow state not found")
+            });
+        }
+
+        if (path == "api/orders/{id:guid}/audit" && method == "GET")
+        {
+            AddJsonResponseExample(operation, "200", new OpenApiArray
+            {
+                new OpenApiObject
+                {
+                    ["traceId"] = new OpenApiString("b2c3d4e5-f6a7-8901-bcde-f23456789012"),
+                    ["orderId"] = new OpenApiString("4a18f3d2-a96d-4d4d-97a2-a5657f5f2d36"),
+                    ["previousState"] = new OpenApiString("Draft"),
+                    ["state"] = new OpenApiString("Submitted"),
+                    ["changedAtUtc"] = new OpenApiDateTime(DateTime.Parse("2026-07-09T22:00:00Z")),
+                    ["changedById"] = new OpenApiString("customer-123"),
+                    ["correlationId"] = new OpenApiString("corr-123")
+                }
+            });
+        }
     }
 
     private static void AddJsonRequestExample(OpenApiOperation operation, IOpenApiAny example)
