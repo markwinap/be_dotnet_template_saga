@@ -17,10 +17,54 @@ namespace OrderService.Infrastructure.Data.Migrations
         {
 #pragma warning disable 612, 618
             modelBuilder
-                .HasAnnotation("ProductVersion", "10.0.0")
-                .HasAnnotation("Relational:MaxIdentifierLength", 128);
+                .HasAnnotation("ProductVersion", "10.0.2")
+                .HasAnnotation("Relational:MaxIdentifierLength", 128)
+                .HasAnnotation("WolverineEnabled", "true");
 
             SqlServerModelBuilderExtensions.UseIdentityColumns(modelBuilder);
+
+            modelBuilder.Entity("OrderService.Application.Sagas.OrderProcessingSaga", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime?>("CompletedAtUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("CurrentStep")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.Property<string>("ErrorReason")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
+
+                    b.Property<DateTime>("LastUpdatedAtUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<int>("RetryCount")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime>("StartedAtUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("nvarchar(32)");
+
+                    b.Property<int>("Version")
+                        .HasColumnType("int");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Id")
+                        .IsUnique();
+
+                    b.ToTable("OrderWorkflowExecutions", "dbo");
+                });
 
             modelBuilder.Entity("OrderService.Domain.Entities.Audit.AuditLog", b =>
                 {
@@ -219,94 +263,96 @@ namespace OrderService.Infrastructure.Data.Migrations
                     b.ToTable("OrderItems", (string)null);
                 });
 
-            modelBuilder.Entity("OrderService.Domain.Entities.OrderWorkflowExecution", b =>
+            modelBuilder.Entity("Wolverine.EntityFrameworkCore.Internals.IncomingMessage", b =>
                 {
                     b.Property<Guid>("Id")
                         .ValueGeneratedOnAdd()
-                        .HasColumnType("uniqueidentifier");
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("id");
 
-                    b.Property<DateTime?>("CompletedAtUtc")
-                        .HasColumnType("datetime2");
+                    b.Property<int>("Attempts")
+                        .HasColumnType("int")
+                        .HasColumnName("attempts");
 
-                    b.Property<string>("CurrentStep")
+                    b.Property<byte[]>("Body")
                         .IsRequired()
-                        .HasMaxLength(128)
-                        .HasColumnType("nvarchar(128)");
+                        .HasColumnType("varbinary(max)")
+                        .HasColumnName("body");
 
-                    b.Property<string>("ErrorReason")
-                        .HasMaxLength(500)
-                        .HasColumnType("nvarchar(500)");
+                    b.Property<DateTimeOffset?>("ExecutionTime")
+                        .HasColumnType("datetimeoffset")
+                        .HasColumnName("execution_time");
 
-                    b.Property<DateTime>("LastUpdatedAtUtc")
-                        .HasColumnType("datetime2");
+                    b.Property<DateTimeOffset?>("KeepUntil")
+                        .HasColumnType("datetimeoffset")
+                        .HasColumnName("keep_until");
 
-                    b.Property<Guid>("OrderId")
-                        .HasColumnType("uniqueidentifier");
+                    b.Property<string>("MessageType")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)")
+                        .HasColumnName("message_type");
 
-                    b.Property<int>("RetryCount")
-                        .HasColumnType("int");
+                    b.Property<int>("OwnerId")
+                        .HasColumnType("int")
+                        .HasColumnName("owner_id");
 
-                    b.Property<DateTime>("StartedAtUtc")
-                        .HasColumnType("datetime2");
+                    b.Property<string>("ReceivedAt")
+                        .HasColumnType("nvarchar(max)")
+                        .HasColumnName("received_at");
 
                     b.Property<string>("Status")
                         .IsRequired()
-                        .HasMaxLength(32)
-                        .HasColumnType("nvarchar(32)");
+                        .HasColumnType("nvarchar(max)")
+                        .HasColumnName("status");
 
                     b.HasKey("Id");
 
-                    b.HasIndex("OrderId")
-                        .IsUnique();
-
-                    b.ToTable("OrderWorkflowExecutions", "dbo");
+                    b.ToTable("wolverine_incoming_envelopes", "dbo", t =>
+                        {
+                            t.ExcludeFromMigrations();
+                        });
                 });
 
-            modelBuilder.Entity("OrderService.Domain.Entities.OutboxMessage", b =>
+            modelBuilder.Entity("Wolverine.EntityFrameworkCore.Internals.OutgoingMessage", b =>
                 {
                     b.Property<Guid>("Id")
                         .ValueGeneratedOnAdd()
-                        .HasColumnType("uniqueidentifier");
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("id");
 
-                    b.Property<DateTime>("CreatedAtUtc")
-                        .HasColumnType("datetime2");
+                    b.Property<int>("Attempts")
+                        .HasColumnType("int")
+                        .HasColumnName("attempts");
 
-                    b.Property<string>("Error")
-                        .HasColumnType("nvarchar(max)");
-
-                    b.Property<string>("MessageId")
+                    b.Property<byte[]>("Body")
                         .IsRequired()
-                        .HasMaxLength(64)
-                        .HasColumnType("nvarchar(64)");
+                        .HasColumnType("varbinary(max)")
+                        .HasColumnName("body");
 
-                    b.Property<string>("Payload")
+                    b.Property<DateTimeOffset?>("DeliverBy")
+                        .HasColumnType("datetimeoffset")
+                        .HasColumnName("deliver_by");
+
+                    b.Property<string>("Destination")
                         .IsRequired()
-                        .HasColumnType("nvarchar(max)");
+                        .HasColumnType("nvarchar(max)")
+                        .HasColumnName("destination");
 
-                    b.Property<DateTime?>("ProcessedAtUtc")
-                        .HasColumnType("datetime2");
-
-                    b.Property<int>("RetryCount")
-                        .HasColumnType("int");
-
-                    b.Property<string>("Topic")
+                    b.Property<string>("MessageType")
                         .IsRequired()
-                        .HasMaxLength(256)
-                        .HasColumnType("nvarchar(256)");
+                        .HasColumnType("nvarchar(max)")
+                        .HasColumnName("message_type");
 
-                    b.Property<string>("Type")
-                        .IsRequired()
-                        .HasMaxLength(256)
-                        .HasColumnType("nvarchar(256)");
+                    b.Property<int>("OwnerId")
+                        .HasColumnType("int")
+                        .HasColumnName("owner_id");
 
                     b.HasKey("Id");
 
-                    b.HasIndex("MessageId")
-                        .IsUnique();
-
-                    b.HasIndex("ProcessedAtUtc", "CreatedAtUtc");
-
-                    b.ToTable("OutboxMessages", "dbo");
+                    b.ToTable("wolverine_outgoing_envelopes", "dbo", t =>
+                        {
+                            t.ExcludeFromMigrations();
+                        });
                 });
 
             modelBuilder.Entity("OrderService.Domain.Entities.Order", b =>

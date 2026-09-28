@@ -1,16 +1,12 @@
-using Azure.Messaging.ServiceBus;
 using FluentAssertions;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Caching.StackExchangeRedis;
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Logging.Abstractions;
 using OrderService.Domain.Entities;
 using OrderService.Domain.Entities.Audit;
-using OrderService.Domain.Events;
 using OrderService.Domain.ValueObjects;
 using OrderService.Infrastructure.Caching;
 using OrderService.Infrastructure.Data;
-using OrderService.Infrastructure.Messaging;
 
 namespace OrderService.Tests.Integration;
 
@@ -71,60 +67,6 @@ public sealed class InfrastructureContainerIntegrationTests(IntegrationTestEnvir
         cached.Should().NotBeNull();
         cached!.Name.Should().Be("integration");
         cached.Value.Should().Be(42);
-    }
-
-    [Fact]
-    public async Task ServiceBus_ShouldPublishAndReceiveMessage()
-    {
-        if (!environment.IsDockerAvailable)
-        {
-            return;
-        }
-
-        await using var client = new ServiceBusClient(environment.ServiceBusConnectionString);
-        var publisher = new AzureServiceBusPublisher(client, NullLogger<AzureServiceBusPublisher>.Instance);
-
-        var marker = Guid.NewGuid().ToString("N");
-        await publisher.PublishAsync("integration-topic", marker, new { marker, createdAt = DateTime.UtcNow });
-
-        await using var receiver = client.CreateReceiver("integration-topic", "integration-subscription");
-        var message = await receiver.ReceiveMessageAsync(TimeSpan.FromSeconds(20));
-
-        message.Should().NotBeNull();
-        message!.Body.ToString().Should().Contain(marker);
-
-        await receiver.CompleteMessageAsync(message);
-    }
-
-    [Fact]
-    public async Task Outbox_ShouldPersistAndRetrieveUnprocessedMessages()
-    {
-        if (!environment.IsDockerAvailable)
-        {
-            return;
-        }
-
-        var options = new DbContextOptionsBuilder<OrderDbContext>()
-            .UseSqlServer(environment.SqlConnectionString)
-            .Options;
-
-        await using var dbContext = new OrderDbContext(options);
-        await dbContext.Database.MigrateAsync();
-
-        var message = OutboxMessage.Create(
-            typeof(OrderSubmittedEvent).FullName!,
-            "orders.submitted",
-            "{\"orderId\":\"test\"}",
-            Guid.NewGuid().ToString("N"));
-
-        await dbContext.OutboxMessages.AddAsync(message);
-        await dbContext.SaveChangesAsync();
-
-        var unprocessed = await dbContext.OutboxMessages
-            .Where(m => m.ProcessedAtUtc == null)
-            .ToListAsync();
-
-        unprocessed.Should().ContainSingle(m => m.Id == message.Id);
     }
 
     [Fact]

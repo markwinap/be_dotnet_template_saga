@@ -41,7 +41,7 @@ Production-ready backend scaffolding with .NET 10, Clean Architecture, DDD, CQRS
 
 ## Architecture Overview
 
-This solution follows **Clean Architecture** with **Domain-Driven Design (DDD)** and **CQRS** using MediatR. The dependency direction always points inward:
+This solution follows **Clean Architecture** with **Domain-Driven Design (DDD)** and **CQRS** using **Wolverine** as the single mediator and message bus. Code is organized into **Vertical Slice Architecture (VSA)** feature folders. The dependency direction always points inward:
 
 ```mermaid
 graph TD
@@ -52,24 +52,25 @@ graph TD
 ```
 
 - **Domain**: entities, value objects, domain events, interfaces, and business rules. No dependencies on other projects.
-- **Application**: command/query handlers, DTOs, validation, and orchestration. References Domain only.
-- **Infrastructure**: EF Core, Redis, Service Bus publisher, and external dependencies. References Application and Domain.
-- **Api**: Minimal API endpoints, OpenAPI/Swagger, authentication, health checks, and telemetry. References Application and Infrastructure.
+- **Application**: VSA feature folders (command/query messages, handlers, validators, DTOs), saga handlers, and Wolverine middleware. References Domain only.
+- **Infrastructure**: EF Core, Redis, Wolverine transport/persistence configuration, and external dependencies. References Application and Domain.
+- **Api**: Wolverine HTTP endpoints, OpenAPI/Swagger, authentication, health checks, and telemetry. References Application and Infrastructure.
 
-The **SAGA orchestration** skeleton uses a retry policy to coordinate long-running business transactions (for example, submitting an order and publishing an `orders.submitted` event). Each step is a MediatR handler; compensation handlers can be added as the workflow grows.
+The **order-processing workflow** is implemented as a durable **Wolverine saga**. Submitting an order raises an `OrderSubmitted` event that starts the saga; the saga cascades inventory reservation, payment, and shipment messages. Retry policies with exponential backoff and jitter are configured through Wolverine's error handling.
 
 ## Included Stack
 
 - .NET SDK 10 / C#
 - Clean Architecture + DDD
-- CQRS using MediatR
-- Minimal APIs + OpenAPI/Swagger + XML docs
+- Vertical Slice Architecture (VSA) feature folders
+- CQRS and messaging using Wolverine
+- Wolverine HTTP endpoints + OpenAPI/Swagger + XML docs
 - JWT Bearer authentication, startup option validation, subject-scoped authorization, and API rate limiting
 - EF Core (SQL Server) with migrations, rowversion concurrency, and query indexes
-- Redis Cache (cache-aside via MediatR behavior)
-- Azure Service Bus publisher abstraction
-- SAGA orchestration skeleton with retry policy
-- Polly / resilience handlers
+- Redis Cache (cache-aside inside Wolverine handlers)
+- Azure Service Bus transport via Wolverine
+- Wolverine durable saga with retry/backoff/jitter error policies
+- Wolverine transactional outbox and durable inbox
 - Serilog logging
 - OpenTelemetry metrics/traces + Prometheus and optional Azure Monitor/Application Insights export
 - Health checks (liveness/readiness/general)
@@ -82,14 +83,25 @@ The **SAGA orchestration** skeleton uses a retry policy to coordinate long-runni
 ```text
 OrderService.slnx
 OrderService.Domain/
+  Entities, value objects, domain events, domain services
 OrderService.Application/
+  Common/Interfaces, Common/Middleware
+  DTOs
+  Features/Orders/{CreateOrder,SubmitOrder,GetOrder,ListOrders,DeleteOrder,GetWorkflowState,GetAuditTrace}
+  Messages/{OrderSubmittedEvent, Saga/*}
+  Sagas/OrderProcessingSaga
 OrderService.Infrastructure/
+  Data/{DbContext, Migrations, Repositories}
+  Caching
 OrderService.Api/
+  Features/Orders/{Create,Submit,...}Endpoints
+  Swagger
 OrderService.Tests/
 .k8s/base/
 .github/
 AGENTS.md
 NEW_PROJECT_PROMPT.md
+WOLVERINE.md
 azure-pipelines.yml
 docker-compose.yml
 ```
@@ -174,11 +186,13 @@ The `OrderService.Infrastructure` project contains the `DbContext` and `Microsof
 
 ## API Endpoints
 
+HTTP routes are implemented with **Wolverine HTTP endpoints** (`[WolverineGet]`, `[WolverinePost]`, `[WolverineDelete]`). Each endpoint translates the HTTP request into a Wolverine command/query message and dispatches it through the handler pipeline.
+
 - `POST /api/auth/dev-token` generates a JWT only when `ASPNETCORE_ENVIRONMENT=Development`.
 - `GET /api/orders` lists only orders owned by the authenticated token subject.
 - `GET /api/orders/{id}` gets a single order.
 - `POST /api/orders` creates an order.
-- `POST /api/orders/{id}/submit` submits an order.
+- `POST /api/orders/{id}/submit` submits an order and starts the Wolverine saga.
 - `DELETE /api/orders/{id}` deletes an order.
 - `GET /api/orders/{id}/workflow-state` gets the durable workflow execution state for an order.
 - `GET /api/orders/{id}/audit` gets the audit/state trace history for an order.
@@ -263,19 +277,19 @@ The following rules are enforced server-side when an order is submitted. They ar
 
 ### Order submission workflow (SAGA)
 
-Order submission is modeled as a durable workflow with an **outbox**, **idempotency keys**, and **activity-based SAGA** steps:
+Order submission is modeled as a durable workflow using **Wolverine**:
 
-1. The command handler validates the business rules and transitions the order from `Draft` to `Submitted`.
-2. The same EF Core transaction writes an `OrderSubmittedEvent` to the `OutboxMessages` table.
-3. A background `OutboxDispatcher` publishes the event to Azure Service Bus.
-4. The `OrderProcessingSaga` runs idempotent activities: `ReserveInventory`, `ProcessPayment`, and `CreateShipment`.
+1. The `SubmitOrderCommand` handler validates the business rules and transitions the order from `Draft` to `Submitted`.
+2. The same EF Core transaction publishes an `OrderSubmittedEvent` to Azure Service Bus and sends an `OrderSubmitted` saga message through Wolverine's transactional outbox.
+3. The `OrderProcessingSaga` starts and cascades idempotent activity messages: `ReserveInventory`, `ProcessPayment`, and `CreateShipment`.
+4. Each activity handler returns a success/failure message that updates the saga state.
 5. Workflow execution state is stored separately from order business state in `OrderWorkflowExecutions`.
 
-This design follows the SRD durable-workflow guidance: workflow runtime owns execution history while the domain owns business state, activities are idempotent, and failures are classified and recorded for forward recovery.
+This design follows the SRD durable-workflow guidance: workflow runtime owns execution history while the domain owns business state, activities are idempotent, and failures are classified and recorded for forward recovery. Wolverine's durable inbox/outbox and idempotency support replace the previous custom outbox/dispatcher infrastructure.
 
 ### Audit and state traceability
 
-Every mutating command is recorded in the immutable `audit.AuditLog` table. Order-state transitions are stored in `audit.OrderStateTrace`. Both tables are append-only and indexed for querying by entity, actor, and correlation ID. Audit rows include a `RowHash` for integrity.
+Every mutating command is recorded in the immutable `audit.AuditLog` table by a custom Wolverine middleware that runs after successful command handling. Order-state transitions are stored in `audit.OrderStateTrace`. Both tables are append-only and indexed for querying by entity, actor, and correlation ID. Audit rows include a `RowHash` for integrity.
 
 ## JWT: Generate and Validate
 

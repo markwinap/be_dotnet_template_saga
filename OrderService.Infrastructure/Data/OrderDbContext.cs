@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using OrderService.Application.Sagas;
 using OrderService.Domain.Entities;
 using OrderService.Domain.Entities.Audit;
 
@@ -8,10 +9,9 @@ public sealed class OrderDbContext(DbContextOptions<OrderDbContext> options) : D
 {
     public DbSet<Order> Orders => Set<Order>();
     public DbSet<OrderItem> OrderItems => Set<OrderItem>();
-    public DbSet<OutboxMessage> OutboxMessages => Set<OutboxMessage>();
     public DbSet<AuditLog> AuditLogs => Set<AuditLog>();
     public DbSet<OrderStateTrace> OrderStateTraces => Set<OrderStateTrace>();
-    public DbSet<OrderWorkflowExecution> OrderWorkflowExecutions => Set<OrderWorkflowExecution>();
+    public DbSet<OrderProcessingSaga> OrderWorkflowExecutions => Set<OrderProcessingSaga>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -51,25 +51,14 @@ public sealed class OrderDbContext(DbContextOptions<OrderDbContext> options) : D
             });
         });
 
-        modelBuilder.Entity<OutboxMessage>(message =>
-        {
-            message.ToTable("OutboxMessages", "dbo");
-            message.HasKey(x => x.Id);
-            message.Property(x => x.Type).HasMaxLength(256);
-            message.Property(x => x.Topic).HasMaxLength(256);
-            message.Property(x => x.MessageId).HasMaxLength(64);
-            message.HasIndex(x => new { x.ProcessedAtUtc, x.CreatedAtUtc });
-            message.HasIndex(x => x.MessageId).IsUnique();
-        });
-
-        modelBuilder.Entity<OrderWorkflowExecution>(execution =>
+        modelBuilder.Entity<OrderProcessingSaga>(execution =>
         {
             execution.ToTable("OrderWorkflowExecutions", "dbo");
             execution.HasKey(x => x.Id);
             execution.Property(x => x.CurrentStep).HasMaxLength(128);
             execution.Property(x => x.Status).HasMaxLength(32);
             execution.Property(x => x.ErrorReason).HasMaxLength(500);
-            execution.HasIndex(x => x.OrderId).IsUnique();
+            execution.HasIndex(x => x.Id).IsUnique();
         });
 
         modelBuilder.Entity<AuditLog>(audit =>

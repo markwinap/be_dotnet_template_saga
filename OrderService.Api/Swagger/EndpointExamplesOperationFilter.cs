@@ -33,6 +33,7 @@ public sealed class EndpointExamplesOperationFilter : IOperationFilter
         {
             AddJsonRequestExample(operation, new OpenApiObject
             {
+                ["customerId"] = new OpenApiString("customer-123"),
                 ["shippingLine1"] = new OpenApiString("1 Main St"),
                 ["city"] = new OpenApiString("Seattle"),
                 ["state"] = new OpenApiString("WA"),
@@ -150,12 +151,13 @@ public sealed class EndpointExamplesOperationFilter : IOperationFilter
         {
             AddJsonResponseExample(operation, "200", new OpenApiObject
             {
-                ["id"] = new OpenApiString("a1b2c3d4-e5f6-7890-abcd-ef1234567890"),
-                ["orderId"] = new OpenApiString("4a18f3d2-a96d-4d4d-97a2-a5657f5f2d36"),
+                ["id"] = new OpenApiString("4a18f3d2-a96d-4d4d-97a2-a5657f5f2d36"),
                 ["currentStep"] = new OpenApiString("Completed"),
                 ["status"] = new OpenApiString("Completed"),
                 ["startedAtUtc"] = new OpenApiDateTime(DateTime.Parse("2026-07-09T22:00:00Z")),
+                ["lastUpdatedAtUtc"] = new OpenApiDateTime(DateTime.Parse("2026-07-09T22:00:05Z")),
                 ["completedAtUtc"] = new OpenApiDateTime(DateTime.Parse("2026-07-09T22:00:05Z")),
+                ["errorReason"] = new OpenApiString("N/A"),
                 ["retryCount"] = new OpenApiInteger(0)
             });
 

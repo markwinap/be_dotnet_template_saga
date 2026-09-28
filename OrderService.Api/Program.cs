@@ -3,7 +3,6 @@ using System.Security.Claims;
 using System.Text;
 using System.Threading.RateLimiting;
 using Azure.Monitor.OpenTelemetry.AspNetCore;
-using MediatR;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -14,21 +13,23 @@ using OpenTelemetry.Metrics;
 using OpenTelemetry.Trace;
 using OrderService.Api.Options;
 using OrderService.Api.Services;
+using OrderService.Api.Swagger;
 using OrderService.Application;
-using OrderService.Application.Commands.CreateOrder;
-using OrderService.Application.Commands.DeleteOrder;
-using OrderService.Application.Commands.SubmitOrder;
-using OrderService.Application.Common.Exceptions;
 using OrderService.Application.Common.Interfaces;
-using OrderService.Application.DTOs;
-using OrderService.Application.Queries.GetOrderById;
-using OrderService.Application.Queries.ListOrders;
-using OrderService.Domain.Interfaces;
+using OrderService.Application.Common.Middleware;
+using OrderService.Application.Messages;
 using OrderService.Domain.Services;
 using OrderService.Infrastructure;
 using OrderService.Infrastructure.Data;
-using OrderService.Api.Swagger;
 using Serilog;
+using JasperFx.Core;
+using Wolverine;
+using Wolverine.AzureServiceBus;
+using Wolverine.EntityFrameworkCore;
+using Wolverine.ErrorHandling;
+using Wolverine.FluentValidation;
+using Wolverine.Http;
+using Wolverine.SqlServer;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -149,6 +150,34 @@ if (!string.IsNullOrWhiteSpace(applicationInsightsConnectionString))
     openTelemetry.UseAzureMonitor(options => options.ConnectionString = applicationInsightsConnectionString);
 }
 
+var dbConnection = builder.Configuration.GetConnectionString("DefaultConnection")
+    ?? "Server=localhost,1433;Database=OrderService;User Id=sa;Password=YourStrong@Passw0rd;TrustServerCertificate=True;";
+var serviceBusConnection = builder.Configuration.GetConnectionString("ServiceBus")
+    ?? "Endpoint=sb://localhost;SharedAccessKeyName=RootManageSharedAccessKey;SharedAccessKey=SAS_KEY_VALUE;UseDevelopmentEmulator=true;";
+
+builder.Host.UseWolverine(opts =>
+{
+    opts.Discovery.IncludeAssembly(typeof(OrderService.Application.DependencyInjection).Assembly);
+
+    opts.UseFluentValidation();
+
+    opts.PersistMessagesWithSqlServer(dbConnection);
+    opts.UseEntityFrameworkCoreTransactions();
+    opts.Policies.AutoApplyTransactions();
+    opts.Policies.UseDurableLocalQueues();
+
+    opts.UseAzureServiceBus(serviceBusConnection)
+        .AutoProvision();
+    opts.PublishMessage<OrderSubmittedEvent>().ToAzureServiceBusTopic("orders.submitted");
+
+    opts.Policies.AddMiddleware(typeof(AuditMiddleware), chain => chain.MessageType.IsAssignableTo(typeof(IAuditableCommand)));
+
+    opts.Policies.OnException<Exception>()
+        .RetryWithCooldown(250.Milliseconds(), 500.Milliseconds(), 1.Seconds())
+        .WithFullJitter()
+        .Then.MoveToErrorQueue();
+});
+
 var app = builder.Build();
 
 if (app.Environment.IsDevelopment())
@@ -197,99 +226,8 @@ if (app.Environment.IsDevelopment())
     }).AllowAnonymous().WithSummary("Development-only token helper.");
 }
 
-app.MapGet("/api/orders/{id:guid}", async (Guid id, ClaimsPrincipal user, ISender sender) =>
-{
-    var order = await sender.Send(new GetOrderByIdQuery(id, GetCustomerId(user)));
-    return order is null ? Results.NotFound() : Results.Ok(order);
-})
-.WithName("GetOrderById")
-.Produces<OrderDto>(StatusCodes.Status200OK)
-.Produces(StatusCodes.Status404NotFound)
-.WithSummary("Gets an order by id.")
-.RequireRateLimiting("api");
-
-app.MapGet("/api/orders", async (ClaimsPrincipal user, ISender sender) =>
-{
-    var orders = await sender.Send(new ListOrdersQuery(GetCustomerId(user)));
-    return Results.Ok(orders);
-})
-.Produces<IReadOnlyCollection<OrderDto>>(StatusCodes.Status200OK)
-.WithSummary("Lists orders.")
-.RequireRateLimiting("api");
-
-app.MapPost("/api/orders", async (CreateOrderRequest request, ClaimsPrincipal user, ISender sender) =>
-{
-    var command = new CreateOrderCommand(
-        GetCustomerId(user),
-        request.ShippingLine1,
-        request.City,
-        request.State,
-        request.PostalCode,
-        request.Country,
-        request.Items);
-    var order = await sender.Send(command);
-    return Results.Created($"/api/orders/{order.Id}", order);
-})
-.Produces<OrderDto>(StatusCodes.Status201Created)
-.WithSummary("Creates an order.")
-.RequireRateLimiting("api");
-
-app.MapPost("/api/orders/{id:guid}/submit", async (Guid id, ClaimsPrincipal user, ISender sender) =>
-{
-    await sender.Send(new SubmitOrderCommand(id, GetCustomerId(user)));
-    return Results.Accepted($"/api/orders/{id}");
-})
-.WithSummary("Submits an order and starts SAGA orchestration.")
-.RequireRateLimiting("api");
-
-app.MapDelete("/api/orders/{id:guid}", async (Guid id, ClaimsPrincipal user, ISender sender) =>
-{
-    try
-    {
-        await sender.Send(new DeleteOrderCommand(id, GetCustomerId(user)));
-        return Results.NoContent();
-    }
-    catch (NotFoundException)
-    {
-        return Results.NotFound();
-    }
-})
-.WithSummary("Deletes an order.")
-.RequireRateLimiting("api");
-
-app.MapGet("/api/orders/{id:guid}/workflow-state", async (Guid id, IOrderWorkflowExecutionStore executionStore, CancellationToken cancellationToken) =>
-{
-    var execution = await executionStore.GetByOrderIdAsync(id, cancellationToken);
-    return execution is null ? Results.NotFound() : Results.Ok(execution);
-})
-.WithName("GetOrderWorkflowState")
-.Produces<object>(StatusCodes.Status200OK)
-.Produces(StatusCodes.Status404NotFound)
-.WithSummary("Gets the durable workflow execution state for an order.")
-.RequireRateLimiting("api");
-
-app.MapGet("/api/orders/{id:guid}/audit", async (Guid id, IAuditRepository auditRepository, CancellationToken cancellationToken) =>
-{
-    var traces = await auditRepository.ListOrderTracesAsync(id, cancellationToken);
-    return Results.Ok(traces);
-})
-.WithName("GetOrderAuditTrace")
-.Produces<IReadOnlyCollection<object>>(StatusCodes.Status200OK)
-.WithSummary("Gets the audit/state trace history for an order.")
-.RequireRateLimiting("api");
+app.MapWolverineEndpoints();
 
 app.Run();
 
-static string GetCustomerId(ClaimsPrincipal user) =>
-    user.FindFirstValue(JwtRegisteredClaimNames.Sub)
-    ?? throw new UnauthorizedAccessException("The access token is missing the subject claim.");
-
 public sealed record DevTokenRequest(string Subject);
-
-public sealed record CreateOrderRequest(
-    string ShippingLine1,
-    string City,
-    string State,
-    string PostalCode,
-    string Country,
-    IReadOnlyCollection<CreateOrderItemRequest> Items);
